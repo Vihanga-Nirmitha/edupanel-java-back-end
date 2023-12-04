@@ -1,20 +1,28 @@
 package lk.ijse.dep11.edupanel.api;
 
+import lk.ijse.dep11.edupanel.to.request.LectureReqTO;
+import org.springframework.http.HttpStatus;
+import org.springframework.validation.BindingResult;
 import org.springframework.web.bind.annotation.*;
+
+import javax.servlet.annotation.MultipartConfig;
+import javax.validation.Valid;
 
 @RestController
 @RequestMapping("/api/v1/lectures")
 @CrossOrigin
 public class LectureHttpController {
-    @PostMapping
-    public   void createNewLecture(){
+    @ResponseStatus(HttpStatus.CREATED)
+    @PostMapping(consumes = "multipart/form-data", produces = "application/json")
+    public  void createNewLecture(@ModelAttribute @Valid LectureReqTO lecturer ){
+        System.out.println(lecturer);
         System.out.println("create");
     }
-    @PatchMapping
+    @PatchMapping("/{lecturer-id}")
     public void updateLectureDetails(){
         System.out.println("update");
     }
-    @DeleteMapping
+    @DeleteMapping("/{lecturer-id}")
     public void deleteLecture(){
         System.out.println("delete");
     }
