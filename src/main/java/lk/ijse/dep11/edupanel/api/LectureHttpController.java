@@ -16,6 +16,8 @@ import javax.sql.DataSource;
 import javax.validation.Valid;
 import java.io.IOException;
 import java.sql.*;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.concurrent.TimeUnit;
 
 @RestController
@@ -90,10 +92,105 @@ public class LectureHttpController {
             throw new RuntimeException(e);
         }
     }
-    @PatchMapping("/{lecturer-id}")
-    public void updateLectureDetails(){
-        System.out.println("update");
+    @PatchMapping(value = "/{lecturer-id}" , consumes = "multipart/form-data")
+    public void updateLectureDetails(@PathVariable("lecturer-id") int lecturerId , @ModelAttribute @Valid LectureReqTO lecturer){
+        try( Connection connection = pool.getConnection()) {
+            Statement stmGetLecturer = connection.createStatement();
+            ResultSet rst = stmGetLecturer.executeQuery("SELECT * FROM lecturer WHERE id = " + lecturerId);
+            if(!rst.next())throw new ResponseStatusException(HttpStatus.NOT_FOUND);
+
+            connection.setAutoCommit(false);
+            try{
+                List<String> columnList = new ArrayList<>();
+                List<String> valueList = new ArrayList<>();
+                if(!rst.getString("name").equals(lecturer.getName())){columnList.add("name");valueList.add(lecturer.getName());}
+
+                if(!rst.getString("designation").equals(lecturer.getDesignation())){columnList.add("designation");valueList.add(lecturer.getDesignation());}
+                if(!rst.getString("qualifications").equals(lecturer.getQualifications())){columnList.add("qualifications");valueList.add(lecturer.getQualifications());}
+                if(!rst.getString("linkedin").equals(lecturer.getLinkedin())){columnList.add("linkedin");valueList.add(lecturer.getLinkedin());}
+                if(!columnList.isEmpty()) {
+                    for (int i = 0; i < columnList.size(); i++) {
+                        PreparedStatement stmUpdate = connection.prepareStatement("UPDATE lecturer SET " + columnList.get(i) + " = ? where id = ?");
+                        stmUpdate.setString(1, valueList.get(i));
+                        stmUpdate.setInt(2, lecturerId);
+                        stmUpdate.executeUpdate();
+
+                    }
+                }
+                    PreparedStatement stmIdentify = connection.prepareStatement("SELECT l.id,l.picture as lecPicture, ftr.`rank` AS ftr, ptr.`rank` AS ptr FROM lecturer l left outer join full_time_rank ftr on l.id = ftr.lecture_id LEFT OUTER JOIN part_time_rank ptr on l.id = ptr.lecture_id WHERE l.id = ?");
+                    stmIdentify.setInt(1,lecturerId);
+                    ResultSet rstGetType = stmIdentify.executeQuery();
+                    rstGetType.next();
+                    int ftr = rstGetType.getInt("ftr");
+                    int ptr = rstGetType.getInt("ptr");
+                    String lecPic = rstGetType.getString("lecPicture");
+                    int rank = ftr>0? ftr: ptr;
+                    String picture= lecturerId+"-"+lecturer.getName();
+                    String pictureUrl = null;
+
+                        if(lecPic == null ){
+                            if(lecturer.getPicture() !=null || !lecturer.getPicture().isEmpty()){
+                                PreparedStatement stmPicUpdate = connection.prepareStatement("UPDATE lecturer SET picture = ? WHERE id = ?");
+                                stmPicUpdate.setString(1,picture);
+                                stmPicUpdate.setInt(2,lecturerId);
+                                stmPicUpdate.executeUpdate();
+                                Blob blob = bucket.create(picture, lecturer.getPicture().getInputStream(), lecturer.getPicture().getContentType());
+                                pictureUrl = blob.signUrl(1, TimeUnit.DAYS, Storage.SignUrlOption.withV4Signature()).toString();
+                            } else{
+                                //no change
+                            }
+                        }else {
+                            if(lecturer.getPicture() !=null || !lecturer.getPicture().isEmpty()){
+
+                                bucket.get(lecPic).delete();
+                                Blob blob = bucket.create(picture, lecturer.getPicture().getInputStream(), lecturer.getPicture().getContentType());
+                                PreparedStatement stmPicUpdate = connection.prepareStatement("UPDATE lecturer SET picture = ? WHERE id = ?");
+                                stmPicUpdate.setString(1,picture);
+                                stmPicUpdate.setInt(2,lecturerId);
+                                stmPicUpdate.executeUpdate();
+
+                                pictureUrl = blob.signUrl(1, TimeUnit.DAYS, Storage.SignUrlOption.withV4Signature()).toString();
+                            }else {
+                                //no change
+                            }
+
+                    } if (ftr > 0 && lecturer.getType().equalsIgnoreCase("part-time")||(ptr > 0 && lecturer.getType().equalsIgnoreCase("full-time")) ) {
+                        String removeTable = ftr > 0? "full_time_rank": "part_time_rank";
+                        String addTable = ftr > 0? "part_time_rank": "full_time_rank";
+                        Statement stmDeleteRank = connection.createStatement();
+                        stmDeleteRank.executeUpdate("DELETE FROM " + removeTable + " WHERE `rank` = " + rank);
+                        Statement stmShift =   connection.createStatement();
+                        stmShift.executeUpdate("UPDATE "+removeTable +" SET `rank` = `rank` - 1 WHERE `rank` > "+rank);
+
+                        Statement stm = connection.createStatement();
+                        ResultSet rstGetRank = stm.executeQuery("SELECT `rank` FROM " + addTable + " ORDER BY `rank` DESC LIMIT 1");
+                        int lastRank;
+                        if(!rstGetRank.next())lastRank=1;
+                        else{
+                            lastRank =rstGetRank.getInt("rank")+1;
+                        }
+                        PreparedStatement stmInsertRank = connection.prepareStatement("INSERT INTO "+addTable+" (lecture_id, `rank`) VALUES (?,?)");
+                        stmInsertRank.setInt(1,lecturerId);
+                        stmInsertRank.setInt(2,lastRank);
+                        stmInsertRank.executeUpdate();
+                    }
+                    connection.commit();
+
+
+
+            }catch (Throwable t){
+                connection.rollback();
+                throw t;
+            }finally {
+                connection.setAutoCommit(false);
+            }
+
+
+        } catch (SQLException | IOException e) {
+            throw new RuntimeException(e);
+        }
     }
+
     @ResponseStatus(HttpStatus.NO_CONTENT)
     @DeleteMapping("/{lecturer-id}")
     public void deleteLecture(@PathVariable("lecturer-id") int lecturerId){
@@ -123,6 +220,7 @@ public class LectureHttpController {
                 stmDelete.executeUpdate();
 
                 if(picure!=null){
+
                     bucket.get(picure).delete();
                 }
 

@@ -22,3 +22,6 @@ CREATE TABLE IF NOT EXISTS part_time_rank(
 );
 SELECT l.id, l.name, ftr.`rank`, ptr.`rank` FROM lecturer l left outer join full_time_rank ftr on l.id = ftr.lecture_id
     LEFT OUTER JOIN part_time_rank ptr on l.id = ptr.lecture_id WHERE l.id = 3;
+
+UPDATE lecturer SET  name = 'sukan' WHERE id = 3;
+SELECT l.id,l.picture as lecPicture, ftr.`rank` AS ftr, ptr.`rank` AS ptr FROM lecturer l left outer join full_time_rank ftr on l.id = ftr.lecture_id LEFT OUTER JOIN part_time_rank ptr on l.id = ptr.lecture_id WHERE l.id = 3;
